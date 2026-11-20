@@ -38,7 +38,7 @@ defaults. `config/chat.toml.example` shows every key.
 | `ASTERISM_CHAT_ROOMS` | the rooms, `id:title,id2:title2` | `lobby:Lobby` |
 | `ASTERISM_CHAT_HISTORY` | `limits.history` (messages kept per room) | 500 |
 | `ASTERISM_CHAT_TEXT_MAX` | `limits.text_max` (characters) | 200 |
-| `ASTERISM_CHAT_NAME_MAX` | `limits.name_max` (characters) | 12 |
+| `ASTERISM_CHAT_NAME_MAX` | `limits.name_max` (characters) | 8 |
 | `ASTERISM_CHAT_PER_DAY` | `limits.posts_per_device_per_day` | 300 |
 | `ASTERISM_CHAT_LOG_DIR` | `store.log_dir` | `~/.local/share/asterism-chat/log` |
 | `ASTERISM_CHAT_STATE_DIR` | `store.state_dir` | `~/.local/share/asterism-chat/state` |

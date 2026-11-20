@@ -164,7 +164,7 @@ class TestE2E < Minitest::Test
     r = s.post("lobby", "12345678901")
     assert_equal "too_long", r["error"]
     assert_includes r["message"], "10"
-    assert_equal "bad_name", s.hello("x" * 13)["error"]
+    assert_equal "bad_name", s.hello("x" * 9)["error"]
   end
 
   def test_daily_limit

@@ -46,7 +46,7 @@ module Chat
       "limits" => {
         "history" => 500,              # messages kept per room (older ones are dropped)
         "text_max" => 200,             # characters of one message
-        "name_max" => 12,              # characters of a display name
+        "name_max" => 8,               # characters of a display name
         "fetch_max" => 20,             # messages in one history answer
         "reply_bytes" => 12_000,       # bytes of the messages in one history answer
         "posts_per_device_per_day" => 300
