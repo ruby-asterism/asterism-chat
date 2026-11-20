@@ -1,0 +1,28 @@
+# asterism-chat settings. Every key is optional (the defaults are shown).
+# The environment (ASTERISM_CHAT_*, README "Settings") goes over this file,
+# and the command's options over both.
+
+[network]
+router = "tcp/127.0.0.1:7447"     # the Asterism router (the sim's zenohd is tcp/127.0.0.1:7447)
+node = "chat"                      # this gem's node ID: the device finds */chat/room
+credentials = ""                   # an Asterism console's .tar for a TLS router (then router may be "")
+devices = ["*"]                    # the node IDs that may use the rooms, e.g. ["fmruby-aaaaaa"]; "*" = any
+name = "Chat"                      # the name the device shows
+
+# The rooms, in the order the devices show them. id: a-z 0-9 _ -, up to 16
+# characters (it names the room's history file too); title: what is shown.
+[[rooms]]
+id = "lobby"
+title = "Lobby"
+
+[limits]
+history = 500                      # messages kept per room; older ones are dropped
+text_max = 200                     # characters of one message
+name_max = 12                      # characters of a display name
+fetch_max = 20                     # messages in one history answer
+reply_bytes = 12000                # bytes of the messages in one history answer
+posts_per_device_per_day = 300
+
+[store]
+log_dir = "~/.local/share/asterism-chat/log"       # the JSONL records (no message text)
+state_dir = "~/.local/share/asterism-chat/state"   # the history, the names, status.json

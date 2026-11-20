@@ -1,0 +1,4 @@
+/.bundle/
+*.gem
+/tmp/
+/deploy/vps/.env

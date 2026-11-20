@@ -1,0 +1,47 @@
+#!/usr/bin/env ruby
+# Starts the chat host as an Asterism application.
+#
+#   asterism-chat [--config chat.toml] [--router tcp/127.0.0.1:7447] [--node chat]
+#                 [--log-dir DIR] [--state-dir DIR]
+#   asterism-chat status [--config chat.toml] [--state-dir DIR]
+#                                       # 0: joined with the room exposed, 1: not, 2: no fresh status
+#
+# Settings: the options, then the environment (ASTERISM_CHAT_*; the file is
+# ASTERISM_CHAT_CONFIG when --config is not given), then the file, then the
+# defaults. SIGTERM (and Ctrl-C): new posts are refused, then it exits.
+require "optparse"
+require_relative "../lib/chat"
+
+command = ARGV.first == "status" ? ARGV.shift : "run"
+path = nil
+over = {}
+set = ->(section, key, value) { (over[section] ||= {})[key] = value }
+OptionParser.new do |o|
+  o.banner = "usage: asterism-chat [status] [options]"
+  o.on("--config FILE", "settings (TOML)") { path = _1 }
+  o.on("--router LOCATOR", "the Asterism router, e.g. tcp/127.0.0.1:7447") { set.("network", "router", _1) }
+  o.on("--node ID", "this node's ID (default chat)") { set.("network", "node", _1) }
+  o.on("--log-dir DIR", "where the JSONL records go") { set.("store", "log_dir", _1) }
+  o.on("--state-dir DIR", "where the history, the names and the status go") { set.("store", "state_dir", _1) }
+end.parse!
+
+begin
+  cfg = Chat::Config.load(path, over)
+rescue Chat::Config::Error => e
+  abort("asterism-chat: #{e.message}")
+end
+
+if command == "status"
+  code, text = Chat::Status.check(Chat::Status.read(Chat::Status.path(cfg)))
+  (code.zero? ? $stdout : $stderr).puts(text)
+  exit code
+end
+
+require "asterism"
+begin
+  server = Chat::Server.new(cfg)
+  %w[TERM INT].each { |sig| trap(sig) { server.request_stop("SIG#{sig}") } }
+  exit server.run
+rescue Asterism::Error => e
+  abort("asterism-chat: #{e.message}")
+end
