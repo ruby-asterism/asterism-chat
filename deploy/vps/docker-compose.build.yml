@@ -1,0 +1,17 @@
+# Build the chat host's image here instead of pulling the published one
+# (docs/install.md, "Building the image yourself"):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml build
+#   docker compose up -d
+#
+# The image gets the name of docker-compose.yml (CHAT_IMAGE and
+# CHAT_VERSION from .env); set CHAT_IMAGE to a name of your own (e.g.
+# asterism-chat-local) so a later pull does not replace it. update.sh
+# --build builds this way from the version's tag.
+services:
+  chat:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile
+      args:
+        CHAT_VERSION: ${CHAT_VERSION:-0.2.0}

@@ -1,0 +1,83 @@
+# The chat host (asterism-chat) on a server, next to an Asterism console
+# (its deploy/vps, compose project "asterism"): docs/install.md. Its own
+# compose project ("asterism-chat"), so the console's update.sh, the game
+# host's and the AI host's never touch it, and this one's never touches
+# them.
+#
+#   chat     no port: joins zenohd tls/7448 on the console's "router" network
+#            with its own certificate (chat.tar, a registry row "chat" with the
+#            role chat-host) and exposes <node>/chat/room and the topic
+#            <node>/chat/news; the devices with the role chat call it there.
+#
+# From the console's project it takes, by name (ASTERISM_PROJECT, "asterism"):
+#   <project>_router   the network zenohd and the console are on
+# and it keeps its own:
+#   state              log/    the records (JSONL, one file a day, never deleted
+#                              by the gem; no message text, no picture; not in
+#                              the console's daily backup)
+#                      store/  rooms/<id>.jsonl (the history), names.json,
+#                              stamps/<sha>.png (the pictures), status.json
+#                              (the healthcheck's)
+#                      The day's posts and pictures are read back from log/ at start.
+# and reads, from this directory:
+#   credentials/       read-only: the chat host's .tar from the console, named in
+#                      .env (ASTERISM_CHAT_CREDENTIALS=/credentials/chat.tar).
+#                      Readable by uid 1000 (chown 1000:1000, chmod 600).
+#
+# The image: ghcr.io/ruby-asterism/asterism-chat:<CHAT_VERSION>, published
+# for each version (CHAT_IMAGE and CHAT_VERSION in .env). To build it here
+# instead: docker-compose.build.yml.
+#
+# Settings: .env next to this file (env.example). Updating: ./update.sh.
+name: asterism-chat
+
+services:
+  chat:
+    image: ${CHAT_IMAGE:-ghcr.io/ruby-asterism/asterism-chat}:${CHAT_VERSION:-0.2.0}
+    init: true
+    restart: unless-stopped
+    # SIGTERM: new posts and pictures are refused as "stopping" and the gem
+    # exits at once (a call is answered at once; nothing is left to wait for).
+    stop_grace_period: 10s
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ASTERISM_CHAT_LOG_DIR: /state/log
+      ASTERISM_CHAT_STATE_DIR: /state/store
+      ASTERISM_CHAT_ROUTER: ${CHAT_ROUTER:-tls/zenohd:7448}
+      # The day of the daily limits and of the records' files is this time
+      # zone's date, and the devices show the messages' times in it
+      # (CHAT_TZ in .env; a TZ line there is not used).
+      TZ: ${CHAT_TZ:-Asia/Tokyo}
+      MALLOC_ARENA_MAX: "2"
+    volumes:
+      - state:/state
+      - ./credentials:/credentials:ro
+    networks:
+      router: {}
+    # Measured: see docs/install.md, "Memory". Over the limit, the kernel
+    # stops the process and docker starts it again (the history and the
+    # pictures are on the volume).
+    mem_limit: ${CHAT_MEM_LIMIT:-192m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    # Healthy: joined to the router with the room exposed (the gem writes
+    # /state/store/status.json every 2 s; the command reads it).
+    healthcheck:
+      test: ["CMD", "bundle", "exec", "exe/asterism-chat", "status"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  state: {}
+
+networks:
+  router:
+    external: true
+    name: ${ASTERISM_PROJECT:-asterism}_router
