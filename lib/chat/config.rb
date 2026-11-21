@@ -12,6 +12,8 @@ module Chat
   class Config
     class Error < StandardError; end
 
+    # How a picture may go out in MessagePack (stamps.binary, stamp_get's "as").
+    BINARY = %w[str bin].freeze
     ROOM_ID = /\A[a-z0-9][a-z0-9_-]{0,15}\z/
 
     # Environment variable => [section, key, kind]. An empty value is the
@@ -28,6 +30,10 @@ module Chat
       "ASTERISM_CHAT_TEXT_MAX" => ["limits", "text_max", :i],
       "ASTERISM_CHAT_NAME_MAX" => ["limits", "name_max", :i],
       "ASTERISM_CHAT_PER_DAY" => ["limits", "posts_per_device_per_day", :i],
+      "ASTERISM_CHAT_STAMPS_MAX" => ["stamps", "max_count", :i],
+      "ASTERISM_CHAT_STAMPS_BYTES" => ["stamps", "max_bytes", :i],
+      "ASTERISM_CHAT_STAMPS_PER_DAY" => ["stamps", "per_device_per_day", :i],
+      "ASTERISM_CHAT_STAMP_BINARY" => ["stamps", "binary", :s],
       "ASTERISM_CHAT_LOG_DIR" => ["store", "log_dir", :s],
       "ASTERISM_CHAT_STATE_DIR" => ["store", "state_dir", :s]
     }.freeze
@@ -51,9 +57,15 @@ module Chat
         "reply_bytes" => 12_000,       # bytes of the messages in one history answer
         "posts_per_device_per_day" => 300
       },
+      "stamps" => {
+        "max_count" => 2000,           # pictures kept; over it, the ones no kept message points to go
+        "max_bytes" => 16 * 1024 * 1024, # bytes of all the pictures kept (16 MB)
+        "per_device_per_day" => 30,    # new pictures a device may put a day
+        "binary" => "str"              # how stamp_get sends a picture: "str" or "bin" (MessagePack)
+      },
       "store" => {
         "log_dir" => "~/.local/share/asterism-chat/log",
-        "state_dir" => "~/.local/share/asterism-chat/state" # the history, the names, the status
+        "state_dir" => "~/.local/share/asterism-chat/state" # the history, the names, the stamps, the status
       }
     }.freeze
 
@@ -145,6 +157,13 @@ module Chat
       end
       %w[history text_max name_max fetch_max reply_bytes posts_per_device_per_day].each do |k|
         raise Error, "limits.#{k} must be a whole number above 0" unless dig("limits", k).is_a?(Integer) && limit(k).positive?
+      end
+      %w[max_count max_bytes per_device_per_day].each do |k|
+        v = dig("stamps", k)
+        raise Error, "stamps.#{k} must be a whole number above 0" unless v.is_a?(Integer) && v.positive?
+      end
+      unless BINARY.include?(dig("stamps", "binary"))
+        raise Error, "stamps.binary must be one of #{BINARY.join(', ')}"
       end
       self
     end

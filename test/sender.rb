@@ -8,12 +8,17 @@
 #   s.post("lobby", "hello")                  # => {"room", "n", "t"}
 #   s.wait_news { |v| v["room"] == "lobby" }  # => {"room" => "lobby", "n" => 3}
 #   s.catch_up("lobby")                       # the messages after the last one seen
+#   s.send_stamp("lobby", File.binread("a.png")) # post a stamp; puts the picture first when asked
+#   s.stamp_get(sha)                          # => {"sha", "png"}
 #
 # As a command (by hand, against a running gem):
 #   ruby test/sender.rb --router tcp/127.0.0.1:17530 --node fmruby-test01 --name Alice lobby
 # reads lines from stdin and posts them; prints every new message of the room.
+# A line "/stamp FILE.png" posts that picture as a stamp; a stamp that comes
+# in is fetched and saved as <sha>.png in --save DIR (when given).
 require "asterism"
 require "json"
+require "digest"
 
 class Sender
   attr_reader :proxy, :path, :news, :seen
@@ -51,6 +56,34 @@ class Sender
   def post(room, text, cid: nil) = @proxy.post({ "room" => room, "text" => text }.merge(cid ? { "cid" => cid } : {}))
   def history(req) = @proxy.history(req)
 
+  # --- stamps ---
+
+  # as: :bin sends the picture as a MessagePack bin, :str as a str (how a
+  # device's String may come).
+  def stamp_put(png, as: :bin, sha: Digest::SHA256.hexdigest(png.b))
+    data = as == :str ? png.b.force_encoding(Encoding::UTF_8) : png.b
+    @proxy.stamp_put({ "sha" => sha, "png" => data })
+  end
+
+  def stamp_has(sha) = @proxy.stamp_has({ "sha" => sha })
+
+  def stamp_get(sha, as: nil)
+    @proxy.stamp_get({ "sha" => sha }.merge(as ? { "as" => as.to_s } : {}))
+  end
+
+  # Posts a stamp the way a device does: the post first; when the host
+  # does not have the picture (no_stamp), it is put and the post sent
+  # again. Returns the post's answer (or the put's refusal).
+  def send_stamp(room, png, cid: nil, as: :bin)
+    sha = Digest::SHA256.hexdigest(png.b)
+    req = { "room" => room, "stamp" => sha }.merge(cid ? { "cid" => cid } : {})
+    r = @proxy.post(req)
+    return r unless r["error"] == "no_stamp"
+    put = stamp_put(png, as: as, sha: sha)
+    return put if put["error"]
+    @proxy.post(req)
+  end
+
   # The next news value the block accepts (all when no block), or nil.
   def wait_news(timeout: 5.0)
     limit = Time.now + timeout
@@ -86,6 +119,7 @@ if $PROGRAM_NAME == __FILE__
     p.on("--credentials TAR", "a console's .tar (mTLS)") { o[:credentials] = _1 }
     p.on("--app NAME", "this application's name (default chat, the device's)") { o[:app] = _1 }
     p.on("--name NAME", "the display name to set") { o[:name] = _1 }
+    p.on("--save DIR", "save the stamps that come in there") { o[:save] = _1 }
   end.parse!
   room = ARGV.first or abort("usage: sender.rb [options] ROOM")
   args = { app: o[:app] }
@@ -99,7 +133,21 @@ if $PROGRAM_NAME == __FILE__
   Asterism.connect(o[:router], **args) do |net|
     s = Sender.new(net)
     puts JSON.generate(s.hello(o[:name]))
-    show = ->(m) { puts "#{m['n']} #{Time.at(m['t']).strftime('%H:%M')} #{m['name']}: #{m['text']}" }
+    show = lambda do |m|
+      body = m["text"]
+      if m["stamp"]
+        body = "[stamp #{m['stamp'][0, 12]}]"
+        if o[:save]
+          g = s.stamp_get(m["stamp"])
+          if g["png"]
+            File.binwrite(File.join(o[:save], "#{m['stamp']}.png"), g["png"].b)
+          else
+            body += " (#{g['error']})"
+          end
+        end
+      end
+      puts "#{m['n']} #{Time.at(m['t']).strftime('%H:%M')} #{m['name']}: #{body}"
+    end
     r = s.history("room" => room)
     r["msgs"].each(&show)
     s.seen[room] = r["last"]
@@ -110,7 +158,12 @@ if $PROGRAM_NAME == __FILE__
       end
     end
     $stdin.each_line do |line|
-      a = s.post(room, line.chomp)
+      line = line.chomp
+      a = if line.start_with?("/stamp ")
+            s.send_stamp(room, File.binread(line.delete_prefix("/stamp ").strip))
+          else
+            s.post(room, line)
+          end
       warn JSON.generate(a) if a["error"]
     end
   end

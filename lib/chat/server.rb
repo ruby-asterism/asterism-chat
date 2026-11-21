@@ -12,14 +12,15 @@ module Chat
     TOPIC = "news".freeze
     NEWS_TYPE = "asterism-chat/news".freeze
 
-    attr_reader :cfg, :store, :log, :limits, :room
+    attr_reader :cfg, :store, :log, :limits, :room, :stamps
 
     def initialize(cfg, clock: -> { Time.now })
       @cfg = cfg
       @log = Log.new(cfg.log_dir, clock: clock)
       @store = Store.new(cfg, clock: clock)
+      @stamps = Stamps.new(cfg, referenced: -> { @store.stamp_refs }, clock: clock)
       @limits = Limits.new(cfg, @log, clock: clock)
-      @room = Room.new(cfg, store: @store, log: @log, limits: @limits)
+      @room = Room.new(cfg, store: @store, log: @log, limits: @limits, stamps: @stamps)
       @stop_q = Queue.new
       @since = Time.now
     end
@@ -32,7 +33,7 @@ module Chat
                                        doc: "Family mruby chat: rooms, posts and history over Asterism")
       net.status("version" => VERSION, "rooms" => @cfg.room_ids.size)
       @log.write(:start, path: path, rooms: @cfg.room_ids, devices: @cfg.dig("network", "devices"),
-                         limits: @cfg["limits"], version: VERSION)
+                         limits: @cfg["limits"], stamps: @cfg["stamps"], version: VERSION)
       path
     end
 
@@ -64,6 +65,9 @@ module Chat
         warn "asterism-chat #{VERSION}: #{@path} on #{@router}"
         warn "asterism-chat: rooms #{@cfg.room_ids.join(' ')}, #{@cfg.limit('history')} messages kept a room, " \
              "#{@limits.max} posts a device a day"
+        st = @stamps.totals
+        warn "asterism-chat: stamps #{st['count']} kept (#{st['bytes']} bytes), up to #{@stamps.max_count} " \
+             "and #{@stamps.max_bytes} bytes, #{@limits.stamps_max} new a device a day"
         $stderr.flush
         net.start
         why = nil
@@ -107,7 +111,7 @@ module Chat
       { "version" => VERSION, "pid" => Process.pid, "at" => Time.now.iso8601(3), "since" => @since.iso8601,
         "path" => @path, "router" => @router, "connected" => connected, "reconnecting" => reconnecting,
         "exposed" => exposed, "stopping" => stopping || stopped, "stopped" => stopped,
-        "rooms" => @store.lasts, "posts_today" => @limits.posts_today }
+        "rooms" => @store.lasts, "posts_today" => @limits.posts_today, "stamps" => @stamps.totals }
     end
 
     def write_status(**kw)

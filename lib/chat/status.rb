@@ -40,7 +40,8 @@ module Chat
       head = "asterism-chat #{data['version']} #{data['path']}"
       return [2, "#{head}: the status is #{age.round} s old (the gem has stopped or hangs)"] if age > max_age
       rooms = (data["rooms"] || {}).map { |id, n| "#{id} #{n}" }.join(", ")
-      tail = "since #{data['since']}, rooms: #{rooms}, today #{data['posts_today'].to_i} posts"
+      st = data["stamps"].is_a?(Hash) ? ", stamps #{data['stamps']['count'].to_i}" : ""
+      tail = "since #{data['since']}, rooms: #{rooms}, today #{data['posts_today'].to_i} posts#{st}"
       return [1, "#{head}: stopping (#{tail})"] if data["stopping"]
       unless data["connected"]
         why = data["reconnecting"] ? "the router is away, joining it again" : "not joined to the router"

@@ -1,4 +1,5 @@
 require "msgpack"
+require "digest"
 
 module Chat
   # The object a device calls: <node>/chat/room (fmruby-core
@@ -10,8 +11,17 @@ module Chat
   # A new message is told on the topic <node>/chat/news as {"room" => id,
   # "n" => number}: the number only, the device fetches the text with
   # history (on_post is given that by the server).
+  #
+  # Stamps (c0.md 3.3): a post may carry "stamp" => the sha256 of a picture
+  # instead of text. When the host does not have that picture the post is
+  # refused with "no_stamp"; the device then sends it with stamp_put and
+  # posts again. A device fetches a picture it does not have with
+  # stamp_get. A picture is a PNG of at most STAMP_PX x STAMP_PX and
+  # STAMP_BYTES; it may come as a MessagePack str or bin.
   class Room
-    METHODS = { hello: 1, rooms: 0, post: 1, history: 1 }.freeze
+    METHODS = { hello: 1, rooms: 0, post: 1, history: 1, stamp_has: 1, stamp_put: 1, stamp_get: 1 }.freeze
+    STAMP_PX = 48
+    STAMP_BYTES = 8 * 1024
     PROTO = 1
     # Remembered per device, to answer a post sent again (after a timeout)
     # with the number it already got instead of posting it twice.
@@ -20,8 +30,9 @@ module Chat
 
     attr_accessor :on_post
 
-    def initialize(cfg, store:, log:, limits:)
+    def initialize(cfg, store:, log:, limits:, stamps:)
       @cfg = cfg
+      @stamps = stamps
       @store = store
       @log = log
       @limits = limits
@@ -72,7 +83,7 @@ module Chat
       { "ok" => true, "proto" => PROTO, "host" => @cfg.dig("network", "name"), "name" => @store.name(from),
         "rooms" => room_list, "text_max" => lim("text_max"), "name_max" => lim("name_max"),
         "fetch_max" => lim("fetch_max"), "per_day" => @limits.max, "used" => @limits.used(from),
-        "tz" => @store.now.utc_offset }
+        "tz" => @store.now.utc_offset, "stamp_px" => STAMP_PX, "stamp_bytes" => STAMP_BYTES }
     end
 
     # [name, nil] or [nil, error Hash]
@@ -93,8 +104,9 @@ module Chat
       { "rooms" => room_list }
     end
 
-    # req: {"room" => id, "text" => text, "cid" => the device's own id of
-    # this post (optional, CID_MAX bytes)}. Returns {"room", "n", "t"}.
+    # req: {"room" => id, "text" => text or "stamp" => sha256 (one of the
+    # two), "cid" => the device's own id of this post (optional, CID_MAX
+    # bytes)}. Returns {"room", "n", "t"}.
     def post(req, from:)
       return not_allowed(from, "post") unless allowed?(from)
       return bad("the request is not a Hash") unless req.is_a?(Hash)
@@ -105,14 +117,24 @@ module Chat
       if cid && (done = @lock.synchronize { @cids[from][cid] })
         return done.dup
       end
-      text = str(req["text"])
-      return bad("text is not a String") unless text
-      text = tidy(text).strip
-      return { "error" => "empty", "message" => "送る文がありません。" } if text.empty?
-      max = lim("text_max")
-      if text.length > max
-        @log.write(:refused, device: from, call: "post", why: "too_long", chars: text.length)
-        return { "error" => "too_long", "message" => "長すぎます (#{max} 文字まで)。" }
+      stamp = nil
+      if req["stamp"].nil?
+        text = str(req["text"])
+        return bad("text is not a String") unless text
+        text = tidy(text).strip
+        return { "error" => "empty", "message" => "送る文がありません。" } if text.empty?
+        max = lim("text_max")
+        if text.length > max
+          @log.write(:refused, device: from, call: "post", why: "too_long", chars: text.length)
+          return { "error" => "too_long", "message" => "長すぎます (#{max} 文字まで)。" }
+        end
+      else
+        stamp = sha_of(req["stamp"])
+        return bad("stamp is not a sha256 (64 hex digits)") unless stamp
+        t = str(req["text"])
+        return bad("text and stamp together (send one of them)") if t && !tidy(t).strip.empty?
+        text = ""
+        return no_stamp(from, stamp, "post") unless @stamps.has?(stamp)
       end
       name = @store.name(from)
       return { "error" => "no_name", "message" => "先に表示名を決めてください。" } unless name
@@ -125,8 +147,13 @@ module Chat
         return refusal
       end
       @limits.count(from)
-      m = @store.append(room, from, name, text)
-      @log.write(:post, device: from, room: room, n: m["n"], chars: text.length)
+      m = @store.append(room, from, name, text, stamp: stamp)
+      if stamp
+        @stamps.touch(stamp)
+        @log.write(:post, device: from, room: room, n: m["n"], stamp: stamp)
+      else
+        @log.write(:post, device: from, room: room, n: m["n"], chars: text.length)
+      end
       out = { "room" => room, "n" => m["n"], "t" => m["t"] }
       @lock.synchronize do
         seen = @cids[from]
@@ -140,6 +167,100 @@ module Chat
     def no_room(from, room)
       @log.write(:refused, device: from, call: "room", why: "no_room", room: room)
       { "error" => "no_room", "message" => "その部屋はありません。" }
+    end
+
+    # --- stamps ---
+
+    # The sha256 as 64 lower-case hex digits, or nil.
+    def sha_of(v)
+      s = str(v)&.downcase
+      s if s && Stamps::SHA.match?(s)
+    end
+
+    # [sha, nil] or [nil, error Hash] from a stamp request's "sha".
+    def stamp_req(req, from, call)
+      return [nil, not_allowed(from, call)] unless allowed?(from)
+      return [nil, bad("the request is not a Hash")] unless req.is_a?(Hash)
+      sha = sha_of(req["sha"])
+      return [nil, bad("sha is not a sha256 (64 hex digits)")] unless sha
+      [sha, nil]
+    end
+
+    def no_stamp(from, sha, call)
+      @log.write(:refused, device: from, call: call, why: "no_stamp", sha: sha)
+      { "error" => "no_stamp", "message" => "その絵はチャットホストにありません。" }
+    end
+
+    # req: {"sha"}. Returns {"sha", "has" => whether the host has it}.
+    def stamp_has(req, from:)
+      sha, why = stamp_req(req, from, "stamp_has")
+      return why if why
+      { "sha" => sha, "has" => @stamps.has?(sha) }
+    end
+
+    # req: {"sha", "png" => the picture's bytes (a str or a bin)}. Checked
+    # without decoding (Png), its sha256 computed again from the bytes.
+    # Returns {"sha", "bytes", "new" => false when the host had it}.
+    def stamp_put(req, from:)
+      sha, why = stamp_req(req, from, "stamp_put")
+      return why if why
+      png = req["png"]
+      return bad("png is not a String") unless png.is_a?(String)
+      png = png.b
+      if @closing
+        @log.write(:refused, device: from, call: "stamp_put", why: "stopping")
+        return { "error" => "stopping", "message" => "チャットホストが止まるところです。少し待ってからもう一度送ってください。" }
+      end
+      if png.bytesize > STAMP_BYTES
+        return stamp_refused(from, sha, png, "too_big", "絵が大きすぎます (#{STAMP_BYTES / 1024} KB まで)。")
+      end
+      begin
+        w, h = Png.size(png)
+      rescue Png::Bad => e
+        return stamp_refused(from, sha, png, "bad_stamp", "この絵はスタンプにできません (PNG の絵だけです)。", e.message)
+      end
+      if w > STAMP_PX || h > STAMP_PX
+        return stamp_refused(from, sha, png, "too_big", "絵が大きすぎます (#{STAMP_PX}x#{STAMP_PX} まで)。", "#{w}x#{h}")
+      end
+      if Digest::SHA256.hexdigest(png) != sha
+        return stamp_refused(from, sha, png, "bad_sha", "絵が途中で変わりました。もう一度送ってください。")
+      end
+      return { "sha" => sha, "bytes" => png.bytesize, "new" => false } if @stamps.has?(sha)
+      if (refusal = @limits.refuse_stamp(from))
+        @log.write(:refused, device: from, call: "stamp_put", why: "stamp_limit", sha: sha)
+        return refusal
+      end
+      kept, dropped = @stamps.put(sha, png)
+      case kept
+      when :old
+        { "sha" => sha, "bytes" => png.bytesize, "new" => false }
+      when :full
+        stamp_refused(from, sha, png, "stamp_full", "チャットホストの絵の置き場がいっぱいです。家の人に知らせてください。")
+      else
+        @limits.count_stamp(from)
+        @log.write(:stamp, device: from, sha: sha, bytes: png.bytesize, w: w, h: h, new: true,
+                           dropped: dropped.size)
+        { "sha" => sha, "bytes" => png.bytesize, "new" => true }
+      end
+    end
+
+    def stamp_refused(from, sha, png, kind, message, detail = nil)
+      @log.write(:refused, device: from, call: "stamp_put", why: kind, sha: sha, bytes: png.bytesize,
+                           **(detail ? { detail: detail } : {}))
+      { "error" => kind, "message" => message }
+    end
+
+    # req: {"sha", "as" => "str" or "bin" (optional: stamps.binary)}.
+    # Returns {"sha", "png" => the picture's bytes}.
+    def stamp_get(req, from:)
+      sha, why = stamp_req(req, from, "stamp_get")
+      return why if why
+      as = req["as"].nil? ? @cfg.dig("stamps", "binary") : str(req["as"])
+      return bad("as is one of #{Config::BINARY.join(', ')}") unless Config::BINARY.include?(as)
+      png = @stamps.read(sha)
+      return no_stamp(from, sha, "stamp_get") unless png
+      png = png.dup.force_encoding(Encoding::UTF_8) if as == "str"
+      { "sha" => sha, "png" => png }
     end
 
     def tell(room, n)

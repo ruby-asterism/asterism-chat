@@ -19,7 +19,8 @@ module Chat
   #
   # A message: {"n" => number in the room (1, 2, ...), "t" => the host's
   # time (seconds since 1970), "node" => the device, "name" => its display
-  # name when it posted, "text" => the text}.
+  # name when it posted, "text" => the text}. A stamp's message has
+  # "text" => "" and "stamp" => the sha256 of its picture (Stamps).
   class Store
     attr_reader :dir
 
@@ -57,10 +58,11 @@ module Chat
     # --- messages ---
 
     # Adds a message to a room; returns it (a copy).
-    def append(room, node, name, text)
+    def append(room, node, name, text, stamp: nil)
       @lock.synchronize do
         r = @rooms.fetch(room)
         m = { "n" => r["last"] + 1, "t" => now.to_i, "node" => node, "name" => name, "text" => text }
+        m["stamp"] = stamp if stamp
         File.open(room_file(room), "a") { _1.puts(JSON.generate(m)) }
         r["lines"] += 1
         r["last"] = m["n"]
@@ -76,6 +78,16 @@ module Chat
       @lock.synchronize do
         r = @rooms.fetch(room)
         { "last" => r["last"], "first" => r["msgs"].first&.fetch("n") }
+      end
+    end
+
+    # The shas of the stamps the kept messages of the served rooms point to
+    # ({sha => true}).
+    def stamp_refs
+      @lock.synchronize do
+        out = {}
+        @rooms.each_value { |r| r["msgs"].each { |m| out[m["stamp"]] = true if m["stamp"] } }
+        out
       end
     end
 

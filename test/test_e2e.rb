@@ -181,13 +181,17 @@ class TestE2E < Minitest::Test
     s = sender("fmruby-aad001", SMALL, listen: false)
     s.hello("Dan")
     last = nil
-    8.times { last = s.post("lobby", "r#{_1}")["n"] }
+    7.times { last = s.post("lobby", "r#{_1}")["n"] }
+    png = TestPng.make(32, 32, seed: 900)
+    last = s.send_stamp("lobby", png)["n"]
     before = s.history("room" => "lobby", "max" => 3)
+    assert_equal TestPng.sha(png), before["msgs"].last["stamp"]
     assert_equal 0, self.class.stop("small")
     self.class.nets.delete("fmruby-aad001")&.close
     self.class.start("small")
     s = sender("fmruby-aad001", SMALL, listen: false)
     assert_equal "Dan", s.hello["name"]
+    assert_equal png, s.stamp_get(TestPng.sha(png))["png"].b # the picture survived the restart
     after = s.history("room" => "lobby", "max" => 3)
     assert_equal before["msgs"], after["msgs"]
     assert_equal last, after["last"]
@@ -199,6 +203,42 @@ class TestE2E < Minitest::Test
     lines = File.readlines(File.join(WORK, "state_small", "rooms", "lobby.jsonl"))
     assert_operator lines.size, :<=, 5 + 16
     assert lines.all? { JSON.parse(_1)["n"] > last - 5 }
+  end
+
+  # --- stamps: one device sends, another fetches the picture ---
+
+  def test_stamps_between_devices
+    a = sender("fmruby-aaa001")
+    b = sender("fmruby-aaa002")
+    a.hello("Alice")
+    b.hello("ボブ")
+    sleep 1.0
+    png = TestPng.make(48, 48, seed: 901)
+    sha = TestPng.sha(png)
+    refute b.stamp_has(sha)["has"]
+    r = a.send_stamp("family", png, as: :str) # as a device's str String may come
+    refute r["error"], r.inspect
+    assert b.wait_news { _1["room"] == "family" && _1["n"] == r["n"] }
+    m = b.catch_up("family").find { _1["n"] == r["n"] }
+    assert_equal ["", sha, "Alice"], m.values_at("text", "stamp", "name")
+    got = b.stamp_get(sha)
+    assert_equal Encoding::UTF_8, got["png"].encoding # a str by default
+    assert_equal png, got["png"].b
+    assert_equal png, b.stamp_get(sha, as: :bin)["png"]
+    assert_equal Encoding::BINARY, b.stamp_get(sha, as: :bin)["png"].encoding
+    # the second time the picture is not sent: the post goes through at once
+    r2 = b.send_stamp("family", png)
+    refute r2["error"], r2.inspect
+    log = Dir[File.join(WORK, "log_main", "*.jsonl")].flat_map { File.readlines(_1) }.map { JSON.parse(_1) }
+    assert_equal 1, log.count { _1["ev"] == "stamp" && _1["sha"] == sha }
+    refute log.any? { _1.to_s.include?("PNG") }
+    # refusals over the network
+    assert_equal "too_big", a.stamp_put(TestPng.make(16, 16, seed: 902, pad: 9000))["error"]
+    assert_equal "too_big", a.stamp_put(TestPng.make(64, 64, seed: 903))["error"]
+    assert_equal "bad_stamp", a.stamp_put("not a picture at all, just words".b)["error"]
+    bad = TestPng.make(16, 16, seed: 904)
+    assert_equal "bad_sha", a.stamp_put(bad, sha: TestPng.sha(bad + "x"))["error"]
+    assert_equal "no_stamp", b.stamp_get("0" * 64)["error"]
   end
 
   def test_status_command

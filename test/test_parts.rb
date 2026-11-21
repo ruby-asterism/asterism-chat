@@ -22,9 +22,10 @@ class TestParts < Minitest::Test
     clock = -> { @now }
     log = Chat::Log.new(c.log_dir, clock: clock)
     store = Chat::Store.new(c, clock: clock)
+    stamps = Chat::Stamps.new(c, referenced: -> { store.stamp_refs }, clock: clock)
     limits = Chat::Limits.new(c, log, clock: clock)
-    room = Chat::Room.new(c, store: store, log: log, limits: limits)
-    [room, store, log, limits]
+    room = Chat::Room.new(c, store: store, log: log, limits: limits, stamps: stamps)
+    [room, store, log, limits, stamps]
   end
 
   # --- settings ---

@@ -23,6 +23,12 @@ fetch_max = 20                     # messages in one history answer
 reply_bytes = 12000                # bytes of the messages in one history answer
 posts_per_device_per_day = 300
 
+[stamps]
+max_count = 2000                   # pictures kept; when a new one does not fit, the ones no kept message points to go, oldest first
+max_bytes = 16777216               # bytes of all the pictures kept (16 MB)
+per_device_per_day = 30            # new pictures a device may put a day
+binary = "str"                     # how stamp_get sends a picture in MessagePack: "str" or "bin"
+
 [store]
 log_dir = "~/.local/share/asterism-chat/log"       # the JSONL records (no message text)
-state_dir = "~/.local/share/asterism-chat/state"   # the history, the names, status.json
+state_dir = "~/.local/share/asterism-chat/state"   # the history, the names, the stamps, status.json
