@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (not released)
+## 0.2.0
 
 Stamps, and a container for a server next to an Asterism console.
 
