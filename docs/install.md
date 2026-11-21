@@ -80,7 +80,7 @@ In the console (Admin > Relay):
      asterism/*/chat/protocol/*
      asterism/*/chat/room/meta
      asterism/*/chat/room/call/${node}
-     asterism/*/chat/news                 (*)
+     asterism/*/chat/news
      ```
    - Ask (the calls, under the device's own name only):
      ```
@@ -99,12 +99,31 @@ In the console (Admin > Relay):
    "Issue a certificate", "Save all (.tar)": `chat.tar`.
 5. Apply (the banner "Review and apply").
 
-(*) The lines of both roles copy asterism-tutor's rows `tutor-host` and
-`tutor` (which were tried on a console's router) with `tutor/helper` made
-`chat/room` and the device's app `chat`. The one line with no counterpart
-there is the topic `asterism/*/chat/news` (the device subscribes to
-`*/chat/news`; a Read line allows declaring the subscriber and receiving
-the values). These rows have not been tried on a console's router yet.
+These rows were tried on a console's router (console 0.4.3, mutual TLS,
+the chat host in its container, two stand-in devices with the role `chat`
+and one without a role). With them, the devices with the role find the
+host, call `hello`, `rooms`, `post`, `history`, `stamp_has`, `stamp_put`
+and `stamp_get`, and receive `news` (subscribed as `*/chat/news`, as the
+Chat app does). A device without the role neither finds the host, nor gets
+an answer to a call, nor receives `news`. A device that names itself after
+another device gets no answer to its calls; one that names itself after
+the host and puts on `chat/chat/news` reaches nobody.
+
+What each line is for, as tried (one line, or one group, taken out at a
+time):
+
+- Needed for the chat: Read `asterism/*/chat/room` and Watch `asterism/**`
+  (without either, the device does not find the host); Read and Ask
+  `asterism/*/chat/room/call/${node}` (without the Read, no call is
+  answered); Read `asterism/*/chat/news` (without it, no `news` arrives).
+- Not needed by the chat itself, kept for the rest of Asterism: Read
+  `asterism/*/chat/protocol/*`, Read and Ask `asterism/*/chat/room/meta`
+  (the object's meta, read by tools such as `asterism node info`; the Chat
+  app does not ask for it), the device's six Read and write lines
+  (its own liveliness, profile and status, which the console's graph
+  shows; taken out together), and the chat host's four `@` lines
+  (together) and its Watch. Without any one of these, the calls and `news`
+  above still went through.
 
 ## 4. Get the files
 
