@@ -133,8 +133,10 @@ class TestE2E < Minitest::Test
     assert_equal got_a, got_b
     assert_equal ["Alice", "ボブ"] * 3, got_a.map { _1["name"] }
     assert_equal %w[fmruby-aaa001 fmruby-aaa002] * 3, got_a.map { _1["node"] }
-    # another room has numbers of its own
-    assert_equal 1, a.post("family", "hi")["n"]
+    # another room has numbers of its own (test_stamps_between_devices may
+    # have posted there already)
+    fam = a.rooms["rooms"].find { _1["id"] == "family" }["last"]
+    assert_equal fam + 1, a.post("family", "hi")["n"]
     assert a.wait_news { _1["room"] == "family" }
 
     # a device that comes later reads the history
@@ -149,7 +151,7 @@ class TestE2E < Minitest::Test
     h = c.history("room" => "lobby", "after" => 4)
     assert_equal [5, 6], h["msgs"].map { _1["n"] }
     refute h["more"]
-    assert_equal [["lobby", 6], ["family", 1]], c.rooms["rooms"].map { [_1["id"], _1["last"]] }
+    assert_equal [["lobby", 6], ["family", fam + 1]], c.rooms["rooms"].map { [_1["id"], _1["last"]] }
   end
 
   def test_refusals
