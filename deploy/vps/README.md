@@ -11,7 +11,7 @@ console's router. **The steps are in [docs/install.md](../../docs/install.md).**
 | `Dockerfile` | the image (the CI builds it for each tag `v<version>`) |
 | `env.example` | the settings (the rooms, the devices, the limits), copied to `.env` (never committed) |
 | `credentials/` | the chat host's own `.tar` from the console (never committed) |
-| `update.sh` | pull a version's image and restart in one command (`--build` builds it here). No `--when-idle`: the chat host has no work in progress, and a device keeps a post sent during the restart and sends it again |
+| `update.sh` | pull a version's image and restart in one command (`--build` builds it here). No `--when-idle`: the chat host has no work in progress; a restart takes a few seconds |
 
 The chat host's volume is not in the console's daily backup (the history and
 the pictures stay in this volume only; docs/install.md, "Backing up").

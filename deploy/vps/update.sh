@@ -27,8 +27,8 @@
 #
 # There is no --when-idle (asterism-tutor has one): the chat host has no
 # work in progress. A restart takes a few seconds; a post sent meanwhile
-# is refused as "stopping" or times out, and the device keeps it and sends
-# it again (the same cid) once the host is back.
+# is refused as "stopping" (the device says so) or gets no answer (the
+# device keeps it and sends it again once the host is back).
 #
 # Options:
 #   -C DIR          the deploy/vps directory (default: this script's directory)
