@@ -129,7 +129,7 @@ and the pictures are not in it.
 ## Tests
 
 `bundle exec rake test`: the unit tests and an end-to-end test against a local zenohd (docker
-`eclipse/zenoh:1.10.1` on 127.0.0.1:17530, started and stopped by the task). `test/sender.rb`
+`eclipse/zenoh:1.10.2` on 127.0.0.1:17530, started and stopped by the task). `test/sender.rb`
 is a device stand-in that can also be used by hand.
 
 ## License

@@ -5,7 +5,7 @@ require "rake/testtask"
 # asterism-tutor's tests' (17520).
 ROUTER_NAME = ENV.fetch("CHAT_ROUTER_NAME", "asterism_chat_zenohd")
 ROUTER_PORT = Integer(ENV.fetch("CHAT_ROUTER_PORT", "17530"))
-ROUTER_IMAGE = "eclipse/zenoh:1.10.1"
+ROUTER_IMAGE = "eclipse/zenoh:1.10.2"
 
 def router_running?
   `docker ps --filter name=^/#{ROUTER_NAME}$ --format '{{.Names}}'`.strip == ROUTER_NAME

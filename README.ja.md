@@ -53,7 +53,7 @@ console に役割 2 つ (`chat-host`: ホスト自身、`chat`: 使う端末) �
 
 ## 試験
 
-`bundle exec rake test`: 部品の試験と、ローカルの zenohd (docker の `eclipse/zenoh:1.10.1`、127.0.0.1:17530。
+`bundle exec rake test`: 部品の試験と、ローカルの zenohd (docker の `eclipse/zenoh:1.10.2`、127.0.0.1:17530。
 タスクが起こして止める) を使う通しの試験。`test/sender.rb` は端末の代わりで、手でも使える。
 
 ## ライセンス
